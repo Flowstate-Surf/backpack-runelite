@@ -9,6 +9,13 @@ import net.runelite.client.config.Range;
 public interface BackpackConfig extends Config
 {
 	String GROUP = "backpack";
+	enum LevelNotifications
+	{
+		EVERY_LEVEL("Every level"), EVERY_TEN_LEVELS("Every 10 levels (20-90 and 99)");
+		private final String label;
+		LevelNotifications(String label) { this.label = label; }
+		@Override public String toString() { return label; }
+	}
 
 	@Range(min = 1)
 	@ConfigItem(
@@ -18,7 +25,7 @@ public interface BackpackConfig extends Config
 	)
 	default int weeklyXpGoal()
 	{
-		return 5_000_000;
+		return 500_000;
 	}
 
 	@ConfigItem(keyName = "serverEnabled", name = "Use Backpack server", description = "Sends your display name and XP, quest-point, and qualifying drop-value deltas to the configured Backpack server", warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers")
@@ -39,6 +46,20 @@ public interface BackpackConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "levelNotifications",
+		name = "Level-up notifications",
+		description = "Post every level-up or only levels 20, 30, 40, 50, 60, 70, 80, 90, and 99"
+	)
+	default LevelNotifications levelNotifications() { return LevelNotifications.EVERY_LEVEL; }
+
+	@ConfigItem(
+		keyName = "discordCollectionLog",
+		name = "Collection Log notifications",
+		description = "Post new Collection Log items to Discord"
+	)
+	default boolean discordCollectionLog() { return true; }
+
+	@ConfigItem(
 		keyName = "discordWebhookUrl",
 		name = "Discord webhook URL",
 		description = "A Discord channel webhook URL. It is stored in your RuneLite settings."
@@ -56,17 +77,17 @@ public interface BackpackConfig extends Config
 	)
 	default int discordDropValue()
 	{
-		return 1_000_000;
+		return 1_000;
 	}
 
 	@ConfigItem(
 		keyName = "discordDropScreenshot",
-		name = "Attach drop screenshot",
-		description = "Attach a screenshot of the game frame to valuable-drop Discord posts",
+		name = "Attach Discord screenshots",
+		description = "Attach a screenshot of the game frame to valuable-drop and Collection Log posts",
 		warning = "Screenshots can contain chat messages or other private information"
 	)
 	default boolean discordDropScreenshot()
 	{
-		return false;
+		return true;
 	}
 }

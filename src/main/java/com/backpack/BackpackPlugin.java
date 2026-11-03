@@ -9,14 +9,18 @@ import java.util.EnumMap;
 import java.util.Map;
 import java.security.SecureRandom;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.config.ConfigManager;
@@ -32,6 +36,7 @@ import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.util.ImageUtil;
+import net.runelite.client.util.Text;
 
 @PluginDescriptor(
 	name = "Backpack",
@@ -61,6 +66,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private static final String SERVER_SEQUENCE = "serverSequence";
 	private static final char[] CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
 	private static final SecureRandom RANDOM = new SecureRandom();
+	private static final Pattern COLLECTION_LOG_ITEM_PATTERN = Pattern.compile("New item added to your collection log: (.*)");
 
 	@Inject private Client client;
 	@Inject private ClientToolbar clientToolbar;
@@ -147,7 +153,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		Integer previousLevel = levels.put(event.getSkill(), event.getLevel());
 		Integer previousSkillXp = skillXp.put(event.getSkill(), event.getXp());
-		if (previousLevel != null && event.getLevel() > previousLevel && config.discordEnabled())
+		if (previousLevel != null && event.getLevel() > previousLevel && config.discordEnabled()
+			&& shouldAnnounceLevel(config.levelNotifications(), event.getLevel()))
 		{
 			discord.send(config.discordWebhookUrl(), displayName() + " reached level " + event.getLevel() + " " + pretty(event.getSkill()) + "! 🎉");
 		}
@@ -179,6 +186,24 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 			refreshPanel();
 		}
 		lastOverallXp = overall;
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (!config.discordEnabled() || !config.discordCollectionLog() || event.getType() != ChatMessageType.GAMEMESSAGE) return;
+		Matcher matcher = COLLECTION_LOG_ITEM_PATTERN.matcher(Text.removeTags(event.getMessage()));
+		if (!matcher.find()) return;
+		String message = displayName() + " added " + matcher.group(1) + " to their Collection Log! 📚";
+		if (config.discordDropScreenshot())
+		{
+			drawManager.requestNextFrameListener(image -> executor.execute(() ->
+				discord.send(config.discordWebhookUrl(), message, ImageUtil.bufferedImageFromImage(image))));
+		}
+		else
+		{
+			discord.send(config.discordWebhookUrl(), message);
+		}
 	}
 
 	@Subscribe
@@ -361,6 +386,12 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		String lower = skill.name().toLowerCase().replace('_', ' ');
 		return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
+	}
+
+	static boolean shouldAnnounceLevel(BackpackConfig.LevelNotifications mode, int level)
+	{
+		return mode == BackpackConfig.LevelNotifications.EVERY_LEVEL
+			|| level == 99 || (level >= 20 && level <= 90 && level % 10 == 0);
 	}
 
 	private void refreshPanel()
