@@ -2,7 +2,7 @@
 
 Backpack turns Old School RuneScape progress into a friendly weekly team race inside RuneLite. Gain XP, earn quest points, land valuable drops, and complete goals to see who is **carrying the team**.
 
-[Plugin overview website](https://backpack-runelite.josh-kyle-bell.chatgpt.site)
+[Plugin overview website](http://backpack.flowstatecs.com/#how)
 
 ## Features
 
