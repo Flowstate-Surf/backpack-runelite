@@ -22,11 +22,13 @@ final class DiscordWebhookClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	private final OkHttpClient httpClient;
+	private final BackpackConfig config;
 
 	@Inject
-	DiscordWebhookClient(OkHttpClient httpClient)
+	DiscordWebhookClient(OkHttpClient httpClient, BackpackConfig config)
 	{
 		this.httpClient = httpClient;
+		this.config = config;
 	}
 
 	void send(String webhookUrl, String message)
@@ -42,6 +44,7 @@ final class DiscordWebhookClient
 			.url(webhookUrl)
 			.post(RequestBody.create(JSON, json))
 			.build();
+		if (!config.discordEnabled()) return;
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override
@@ -92,6 +95,7 @@ final class DiscordWebhookClient
 	private void enqueue(String webhookUrl, RequestBody body)
 	{
 		Request request = new Request.Builder().url(webhookUrl).post(body).build();
+		if (!config.discordEnabled()) return;
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override public void onFailure(Call call, IOException exception) { log.warn("Unable to post Backpack event to Discord", exception); }

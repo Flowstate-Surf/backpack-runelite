@@ -22,7 +22,8 @@ final class BackpackApiClient
 	private static final MediaType JSON_TYPE = MediaType.get("application/json; charset=utf-8");
 	private final OkHttpClient http;
 	private final Gson gson;
-	@Inject BackpackApiClient(OkHttpClient http, Gson gson) { this.http = http; this.gson = gson; }
+	private final BackpackConfig config;
+	@Inject BackpackApiClient(OkHttpClient http, Gson gson, BackpackConfig config) { this.http = http; this.gson = gson; this.config = config; }
 
 	void create(String base, String team, String player, Consumer<Session> success, Consumer<String> failure)
 	{
@@ -41,6 +42,7 @@ final class BackpackApiClient
 		if (!validBase(base)) { failure.accept("Invalid server URL"); return; }
 		Request.Builder builder = new Request.Builder().url(base.replaceAll("/$", "") + path).post(RequestBody.create(JSON_TYPE, gson.toJson(payload)));
 		if (token != null) builder.header("Authorization", "Bearer " + token);
+		if (!config.serverEnabled()) { failure.accept("Backpack server is disabled"); return; }
 		http.newCall(builder.build()).enqueue(new Callback()
 		{
 			@Override public void onFailure(Call call, IOException e) { SwingUtilities.invokeLater(() -> failure.accept("Server unavailable")); }
