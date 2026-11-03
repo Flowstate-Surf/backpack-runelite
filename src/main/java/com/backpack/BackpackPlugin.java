@@ -153,15 +153,15 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		Integer previousLevel = levels.put(event.getSkill(), event.getLevel());
 		Integer previousSkillXp = skillXp.put(event.getSkill(), event.getXp());
-		if (previousLevel != null && event.getLevel() > previousLevel && config.discordEnabled()
-			&& shouldAnnounceLevel(config.levelNotifications(), event.getLevel()))
-		{
-			discord.send(config.discordWebhookUrl(), displayName() + " reached level " + event.getLevel() + " " + pretty(event.getSkill()) + "! 🎉");
-		}
 		long overall = client.getOverallExperience();
 		if (initializingTicks > 0)
 		{
 			return;
+		}
+		if (previousLevel != null && event.getLevel() > previousLevel && config.discordEnabled()
+			&& shouldAnnounceLevel(config.levelNotifications(), event.getLevel()))
+		{
+			discord.send(config.discordWebhookUrl(), displayName() + " reached level " + event.getLevel() + " " + pretty(event.getSkill()) + "! 🎉");
 		}
 		if (!goalCompleted && personalGoal != null && personalGoal.getType() == Goal.Type.SKILL_XP
 			&& event.getSkill().name().equals(personalGoal.getReference()) && previousSkillXp != null && event.getXp() > previousSkillXp)
@@ -219,6 +219,14 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		{
 			lastOverallXp = client.getOverallExperience();
 			lastQuestPoints = client.getVarpValue(VarPlayerID.QP);
+			for (Skill skill : Skill.values())
+			{
+				if (skill != Skill.OVERALL)
+				{
+					levels.put(skill, client.getRealSkillLevel(skill));
+					skillXp.put(skill, client.getSkillExperience(skill));
+				}
+			}
 			refreshPanel();
 		}
 		if (initializingTicks == 0 && team != null)
