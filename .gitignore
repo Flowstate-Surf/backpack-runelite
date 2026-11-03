@@ -1,0 +1,7 @@
+.gradle/
+build/
+server/.gradle/
+server/build/
+server/.env
+server/backpack-data.json
+*.log
