@@ -202,7 +202,7 @@ final class BackpackPanel extends PluginPanel
 		newTaskButton.addActionListener(event -> actions.generateTask());
 	}
 
-	void update(Team team, String username, BackpackState state, int goal, Goal personalGoal, Goal nextGoal,
+	void update(Team team, String username, BackpackState state, int goal, Goal personalGoal, Goal nextGoal, long goalProgress,
 		boolean goalCompleted, GroupChallenge groupChallenge, int groupWins, int combatLevel, BadgeProgress badges)
 	{
 		refreshBadges(badges);
@@ -263,7 +263,18 @@ final class BackpackPanel extends PluginPanel
 			clear.setBorder(new RoundedBorder(BORDER_LIGHT, 4, new Insets(1, 5, 1, 5)));
 			clear.addActionListener(event -> actions.clearGoal());
 			goalContainer.add(icon, BorderLayout.WEST);
-			goalContainer.add(text, BorderLayout.CENTER);
+			if (personalGoal.getType() == Goal.Type.SKILL_XP)
+			{
+				JPanel details = new JPanel(new BorderLayout(0, 4));
+				details.setOpaque(false);
+				details.add(text, BorderLayout.CENTER);
+				details.add(xpProgressBar(goalCompleted ? personalGoal.getTarget() : goalProgress, personalGoal.getTarget()), BorderLayout.SOUTH);
+				goalContainer.add(details, BorderLayout.CENTER);
+			}
+			else
+			{
+				goalContainer.add(text, BorderLayout.CENTER);
+			}
 			goalContainer.add(clear, BorderLayout.EAST);
 		}
 		goalContainer.revalidate();
@@ -293,9 +304,38 @@ final class BackpackPanel extends PluginPanel
 			JLabel text = new JLabel("<html><div style='width:150px'><b>First to finish: " + escapeHtml(challengeGoal.getDetail()) + "</b><br><font color='#aaaaaa'>"
 				+ format(progress) + " / " + format(target) + " · Winner earns 30 pts</font></div></html>");
 			text.setFont(UI_FONT);
-			groupGoalContainer.add(icon, BorderLayout.WEST); groupGoalContainer.add(text, BorderLayout.CENTER);
+			groupGoalContainer.add(icon, BorderLayout.WEST);
+			if (challengeGoal.getType() == Goal.Type.SKILL_XP)
+			{
+				JPanel details = new JPanel(new BorderLayout(0, 4));
+				details.setOpaque(false);
+				details.add(text, BorderLayout.CENTER);
+				details.add(xpProgressBar(progress, target), BorderLayout.SOUTH);
+				groupGoalContainer.add(details, BorderLayout.CENTER);
+			}
+			else
+			{
+				groupGoalContainer.add(text, BorderLayout.CENTER);
+			}
 		}
 		groupGoalContainer.revalidate(); groupGoalContainer.repaint();
+	}
+
+	private static JProgressBar xpProgressBar(long progress, long target)
+	{
+		long safeTarget = Math.max(1, target);
+		long safeProgress = Math.max(0, Math.min(progress, safeTarget));
+		double percent = safeProgress * 100d / safeTarget;
+		JProgressBar bar = new JProgressBar(0, 10_000);
+		bar.setValue((int) Math.round(percent * 100));
+		bar.setStringPainted(true);
+		bar.setString(String.format("%.2f%% · %s / %s XP", percent, format(safeProgress), format(safeTarget)));
+		bar.setFont(new Font(Font.SANS_SERIF, Font.BOLD, 10));
+		bar.setForeground(new Color(55, 145, 45));
+		bar.setBackground(new Color(16, 16, 16));
+		bar.setBorder(BorderFactory.createLineBorder(BORDER_DARK));
+		bar.setPreferredSize(new Dimension(150, 17));
+		return bar;
 	}
 
 	void showError(String message)

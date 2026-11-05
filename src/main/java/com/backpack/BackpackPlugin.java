@@ -407,7 +407,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		if (panel == null || state == null) return;
 		String username = client.getLocalPlayer() == null ? "You" : client.getLocalPlayer().getName();
 		int combatLevel = client.getLocalPlayer() == null ? 0 : client.getLocalPlayer().getCombatLevel();
-		SwingUtilities.invokeLater(() -> panel.update(team, username, state, config.weeklyXpGoal(), personalGoal, nextGoal,
+		SwingUtilities.invokeLater(() -> panel.update(team, username, state, config.weeklyXpGoal(), personalGoal, nextGoal, goalProgress,
 			goalCompleted, groupChallenge, groupWins, combatLevel, badgeProgress));
 	}
 
