@@ -49,7 +49,7 @@ final class BackpackPanel extends PluginPanel
 		void joinTeam(String code);
 		void leaveTeam();
 		void resetWeek();
-		void setGoal(Goal goal);
+		void setGoal(String memberId, Goal goal);
 		void generateTask();
 		void clearGoal();
 	}
@@ -82,6 +82,7 @@ final class BackpackPanel extends PluginPanel
 	private BadgeProgress currentBadgeProgress = BadgeProgress.empty();
 	private final JButton badgeFilterButton = new JButton("EARNED ONLY");
 	private boolean showLocked = true;
+	private Team currentTeam;
 
 	BackpackPanel(Actions actions, GoalCatalog catalog)
 	{
@@ -205,6 +206,7 @@ final class BackpackPanel extends PluginPanel
 	void update(Team team, String username, BackpackState state, int goal, Goal personalGoal, Goal nextGoal, long goalProgress,
 		boolean goalCompleted, GroupChallenge groupChallenge, int groupWins, int combatLevel, BadgeProgress badges)
 	{
+		currentTeam = team;
 		refreshBadges(badges);
 		boolean hasTeam = team != null;
 		teamName.setText(hasTeam ? team.getName() : "BACKPACK");
@@ -226,8 +228,13 @@ final class BackpackPanel extends PluginPanel
 		if (state.getXpGained() > 0) playerBadges.add(catalog.badgeIcon("carrier1", true));
 		if (goalCompleted && personalGoal != null) playerBadges.add(catalog.icon(personalGoal));
 		String playerKey = safeName(username);
-		raceContainer.add(new RaceLane(playerKey, playerKey, combatLevel, state.getXpGained(), teamPointGoal, CarryPoints.total(state), true, playerBadges,
-			state, personalGoal, goalCompleted, expandedPlayers.contains(playerKey)));
+		Team.Member currentMember = null;
+		if (hasTeam) for (Team.Member member : team.getMembers()) if (safeName(member.getName()).equalsIgnoreCase(playerKey)) { currentMember = member; break; }
+		long displayedXp = currentMember == null ? state.getXpGained() : currentMember.getXp();
+		long displayedPoints = currentMember == null ? CarryPoints.total(state) : currentMember.getPoints();
+		int displayedCombat = currentMember == null || currentMember.getCombatLevel() == 0 ? combatLevel : currentMember.getCombatLevel();
+		raceContainer.add(new RaceLane(playerKey, playerKey, displayedCombat, displayedXp, teamPointGoal, displayedPoints, true, playerBadges,
+			state, personalGoal, goalProgress, goalCompleted, expandedPlayers.contains(playerKey)));
 		if (hasTeam && !team.getMembers().isEmpty())
 		{
 			for (Team.Member member : team.getMembers())
@@ -237,8 +244,8 @@ final class BackpackPanel extends PluginPanel
 				java.util.List<Image> memberBadges = new java.util.ArrayList<>();
 				if (member.isLeader()) memberBadges.add(catalog.badgeIcon("leader", true));
 				String memberName = safeName(member.getName());
-				raceContainer.add(new RaceLane(memberName, memberName, 0, member.getXp(), teamPointGoal, member.getPoints(), true,
-					memberBadges, null, null, false, expandedPlayers.contains(memberName)));
+				raceContainer.add(new RaceLane(memberName, memberName, member.getCombatLevel(), member.getXp(), teamPointGoal, member.getPoints(), true,
+					memberBadges, null, member.getGoal(), member.getGoalProgress(), member.isGoalCompleted(), expandedPlayers.contains(memberName)));
 			}
 		}
 		raceContainer.revalidate();
@@ -359,6 +366,14 @@ final class BackpackPanel extends PluginPanel
 
 	private void promptGoal()
 	{
+		if (currentTeam == null) return;
+		Team.Member target = null;
+		if (!currentTeam.getMembers().isEmpty())
+		{
+			target = (Team.Member) JOptionPane.showInputDialog(this, "Assign goal to", "Assign player goal", JOptionPane.PLAIN_MESSAGE,
+				null, currentTeam.getMembers().toArray(), currentTeam.getMembers().get(0));
+			if (target == null) return;
+		}
 		Goal.Type type = (Goal.Type) JOptionPane.showInputDialog(this, "Goal type", "Assign player goal", JOptionPane.PLAIN_MESSAGE, null, Goal.Type.values(), Goal.Type.SKILL_XP);
 		if (type == null) return;
 		GoalCatalog.Choice choice;
@@ -379,7 +394,7 @@ final class BackpackPanel extends PluginPanel
 		if (amount == null) return;
 		try
 		{
-			actions.setGoal(new Goal(type, choice.getName(), Long.parseLong(amount.replace(",", "").trim()), choice.getReference()));
+			actions.setGoal(target == null ? null : target.getId(), new Goal(type, choice.getName(), Long.parseLong(amount.replace(",", "").trim()), choice.getReference()));
 		}
 		catch (NumberFormatException ignored)
 		{
@@ -627,11 +642,12 @@ final class BackpackPanel extends PluginPanel
 		private final java.util.List<Image> badges;
 		private final BackpackState state;
 		private final Goal assignedGoal;
+		private final long goalProgress;
 		private final boolean goalCompleted;
 		private boolean expanded;
 
 		private RaceLane(String key, String name, int combatLevel, long xp, long pointsGoal, long points, boolean active, java.util.List<Image> badges,
-			BackpackState state, Goal assignedGoal, boolean goalCompleted, boolean expanded)
+			BackpackState state, Goal assignedGoal, long goalProgress, boolean goalCompleted, boolean expanded)
 		{
 			this.key = key;
 			this.name = name;
@@ -643,6 +659,7 @@ final class BackpackPanel extends PluginPanel
 			this.badges = badges;
 			this.state = state;
 			this.assignedGoal = assignedGoal;
+			this.goalProgress = Math.max(0, goalProgress);
 			this.goalCompleted = goalCompleted;
 			this.expanded = expanded;
 			setFont(UI_FONT);
@@ -743,8 +760,11 @@ final class BackpackPanel extends PluginPanel
 			g.setFont(getFont().deriveFont(Font.BOLD, 12f));
 			if (state == null)
 			{
-				g.setColor(MUTED);
-				g.drawString("No weekly activity received yet", x, y);
+				paintLine(g, x, y, "Assigned goal", assignedGoal == null ? "None" : assignedGoal.getDetail(), assignedGoal == null ? MUTED : GOLD);
+				String progress = assignedGoal == null ? "--" : (goalCompleted ? "Complete" : format(goalProgress) + " / " + format(assignedGoal.getTarget()));
+				paintLine(g, x, y + 19, "Goal progress", progress, goalCompleted ? new Color(123, 216, 143) : MUTED);
+				paintLine(g, x, y + 38, "Weekly points", points + " pts", GOLD);
+				paintLine(g, x, y + 57, "XP gained", format(xp), GOLD);
 				return;
 			}
 			paintLine(g, x, y, "XP gained", format(state.getXpGained()) + " · " + CarryPoints.forXp(state.getXpGained()) + " pts", GOLD);

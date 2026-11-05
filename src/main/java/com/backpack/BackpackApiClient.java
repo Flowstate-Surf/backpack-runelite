@@ -25,13 +25,27 @@ final class BackpackApiClient
 	private final BackpackConfig config;
 	@Inject BackpackApiClient(OkHttpClient http, Gson gson, BackpackConfig config) { this.http = http; this.gson = gson; this.config = config; }
 
-	void create(String base, String team, String player, Consumer<Session> success, Consumer<String> failure)
+	void create(String base, String team, String player, int combatLevel, Consumer<Session> success, Consumer<String> failure)
 	{
-		post(base, "/v1/teams/create", Map.of("name", team, "player", player), null, success, failure);
+		post(base, "/v1/teams/create", Map.of("name", team, "player", player, "combatLevel", combatLevel), null, success, failure);
 	}
-	void join(String base, String code, String player, Consumer<Session> success, Consumer<String> failure)
+	void join(String base, String code, String player, int combatLevel, Consumer<Session> success, Consumer<String> failure)
 	{
-		post(base, "/v1/teams/join", Map.of("code", code, "player", player), null, success, failure);
+		post(base, "/v1/teams/join", Map.of("code", code, "player", player, "combatLevel", combatLevel), null, success, failure);
+	}
+	void profile(String base, String token, int combatLevel, Goal goal, long progress, boolean completed)
+	{
+		java.util.Map<String, Object> payload = new java.util.HashMap<>();
+		payload.put("combatLevel", combatLevel); payload.put("goal", goal == null ? null : goal.serialize());
+		payload.put("goalProgress", progress); payload.put("goalCompleted", completed);
+		post(base, "/v1/profile", payload, token, ignored -> {}, error -> log.warn("Backpack profile sync failed: {}", error));
+	}
+	void assignGoal(String base, String token, String memberId, Goal goal, Runnable success, Consumer<String> failure)
+	{
+		java.util.Map<String, Object> payload = new java.util.HashMap<>();
+		payload.put("action", goal == null ? "CLEAR_GOAL" : "SET_GOAL"); payload.put("memberId", memberId);
+		payload.put("goal", goal == null ? null : goal.serialize());
+		post(base, "/v1/admin", payload, token, ignored -> success.run(), failure);
 	}
 	void event(String base, String token, String type, long amount, long sequence)
 	{
@@ -87,5 +101,5 @@ final class BackpackApiClient
 	}
 	static final class Session { RemoteTeam team; String memberId; String token; }
 	static final class RemoteTeam { String code; String name; Map<String, RemoteMember> members; }
-	static final class RemoteMember { String id; String name; String role; long points; long xp; }
+	static final class RemoteMember { String id; String name; String role; long points; long xp; int combatLevel; String goal; long goalProgress; boolean goalCompleted; }
 }

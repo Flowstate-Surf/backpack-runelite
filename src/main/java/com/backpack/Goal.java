@@ -39,6 +39,7 @@ final class Goal
 	long getTarget() { return target; }
 	String getReference() { return reference; }
 	String getIcon() { return type.getIcon(); }
+	boolean sameTask(Goal other) { return other != null && type == other.type && reference.equals(other.reference); }
 
 	String serialize()
 	{

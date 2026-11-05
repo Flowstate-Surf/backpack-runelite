@@ -170,6 +170,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		{
 			goalProgress += event.getXp() - previousSkillXp;
 			configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS, goalProgress);
+			syncProfile();
 		}
 		if (groupChallenge != null && !groupChallenge.isCooldown() && groupChallenge.getGoal().getType() == Goal.Type.SKILL_XP
 			&& event.getSkill().name().equals(groupChallenge.getGoal().getReference()) && previousSkillXp != null && event.getXp() > previousSkillXp)
@@ -298,6 +299,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 			completeGoal(CarryPoints.forDrop(bestValue));
 		}
 		saveState();
+		syncProfile();
 		refreshPanel();
 		if (config.discordEnabled())
 		{
@@ -393,6 +395,53 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		return client.getLocalPlayer() == null ? "A teammate" : client.getLocalPlayer().getName();
 	}
 
+	private int combatLevel()
+	{
+		return client.getLocalPlayer() == null ? 0 : client.getLocalPlayer().getCombatLevel();
+	}
+
+	private void syncProfile()
+	{
+		if (!config.serverEnabled() || serverToken == null) return;
+		api.profile(config.serverUrl(), serverToken, combatLevel(), personalGoal, goalProgress, goalCompleted);
+	}
+
+	private void reconcileRemoteGoal(BackpackApiClient.RemoteTeam remote, String memberId)
+	{
+		if (remote == null || remote.members == null || memberId == null) return;
+		BackpackApiClient.RemoteMember member = remote.members.get(memberId);
+		if (member == null) return;
+		Goal assigned = Goal.deserialize(member.goal);
+		String localValue = personalGoal == null ? null : personalGoal.serialize();
+		String remoteValue = assigned == null ? null : assigned.serialize();
+		if (!java.util.Objects.equals(localValue, remoteValue))
+		{
+			personalGoal = assigned;
+			nextGoal = null;
+			if (assigned == null) configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, PERSONAL_GOAL);
+			else configManager.setRSProfileConfiguration(BackpackConfig.GROUP, PERSONAL_GOAL, assigned.serialize());
+			configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
+		}
+		goalProgress = member.goalProgress;
+		goalCompleted = member.goalCompleted;
+		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS, goalProgress);
+		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED, goalCompleted);
+	}
+
+	private void resetTeamScopedProgress()
+	{
+		state = BackpackState.emptyForCurrentWeek(Instant.now());
+		personalGoal = null; nextGoal = null; goalCompleted = false; goalProgress = 0;
+		groupChallenge = null; groupWins = 0;
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, PERSONAL_GOAL);
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED);
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS);
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GROUP_CHALLENGE);
+		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GROUP_WINS);
+		saveState();
+	}
+
 	private static String pretty(Skill skill)
 	{
 		String lower = skill.name().toLowerCase().replace('_', ' ');
@@ -419,9 +468,10 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		if (config.serverEnabled())
 		{
-			api.create(config.serverUrl(), name, displayName(), this::applyServerSession, error -> panel.showError(error));
+			api.create(config.serverUrl(), name, displayName(), combatLevel(), this::applyServerSession, error -> panel.showError(error));
 			return;
 		}
+		resetTeamScopedProgress();
 		team = new Team(name, newInviteCode(), 1, true);
 		saveTeam();
 		clientThread.invokeLater(this::createGroupChallenge);
@@ -435,9 +485,10 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		if (normalized.length() != 8) return;
 		if (config.serverEnabled())
 		{
-			api.join(config.serverUrl(), normalized, displayName(), this::applyServerSession, error -> panel.showError(error));
+			api.join(config.serverUrl(), normalized, displayName(), combatLevel(), this::applyServerSession, error -> panel.showError(error));
 			return;
 		}
+		resetTeamScopedProgress();
 		team = new Team("Joined team", normalized, 1, false);
 		saveTeam();
 		clientThread.invokeLater(this::createGroupChallenge);
@@ -447,13 +498,15 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private void applyServerSession(BackpackApiClient.Session session)
 	{
 		if (session == null || session.team == null || session.token == null) { panel.showError("Invalid server session"); return; }
+		resetTeamScopedProgress();
 		team = fromRemoteTeam(session.team, session.memberId);
 		serverToken = session.token; serverSequence = 0;
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_TOKEN, serverToken);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID, session.memberId);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_SEQUENCE, 0L);
 		nextTeamRefreshAt = System.currentTimeMillis() + 10_000;
-		saveTeam(); refreshPanel(); clientThread.invokeLater(this::createGroupChallenge);
+		reconcileRemoteGoal(session.team, session.memberId);
+		saveTeam(); syncProfile(); refreshPanel(); clientThread.invokeLater(this::createGroupChallenge);
 	}
 
 	private void refreshServerTeam()
@@ -468,6 +521,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 			teamRefreshInFlight = false;
 			if (remote == null || team == null || !expectedCode.equals(remote.code)) return;
 			team = fromRemoteTeam(remote, memberId);
+			reconcileRemoteGoal(remote, memberId);
 			saveTeam(); refreshPanel();
 		}, error -> teamRefreshInFlight = false);
 	}
@@ -482,7 +536,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 			{
 				BackpackApiClient.RemoteMember member = entry.getValue();
 				if (member == null) continue;
-				members.add(new Team.Member(member.name, member.role, member.points, member.xp));
+				members.add(new Team.Member(member.id, member.name, member.role, member.points, member.xp, member.combatLevel,
+					Goal.deserialize(member.goal), member.goalProgress, member.goalCompleted));
 				if (entry.getKey().equals(memberId)) me = member;
 			}
 		}
@@ -525,12 +580,18 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED, false);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS, 0);
 		saveState();
+		syncProfile();
 		refreshPanel();
 	}
 
 	@Override
-	public void setGoal(Goal goal)
+	public void setGoal(String memberId, Goal goal)
 	{
+		if (team != null && config.serverEnabled() && serverToken != null)
+		{
+			api.assignGoal(config.serverUrl(), serverToken, memberId, goal, this::refreshServerTeam, error -> panel.showError(error));
+			return;
+		}
 		nextGoal = null;
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
 		startGoal(goal);
@@ -544,6 +605,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, PERSONAL_GOAL, goal.serialize());
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED, false);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS, 0);
+		syncProfile();
 		refreshPanel();
 	}
 
@@ -552,6 +614,13 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		clientThread.invokeLater(() -> {
 			TaskPlan plan = taskGenerator.generate();
+			Goal excluded = groupChallenge == null || groupChallenge.isCooldown() ? null : groupChallenge.getGoal();
+			for (int attempt = 0; excluded != null && plan.getCurrent().sameTask(excluded) && attempt < 12; attempt++) plan = taskGenerator.generate();
+			if (excluded != null && plan.getCurrent().sameTask(excluded))
+			{
+				String skill = "AGILITY".equals(excluded.getReference()) ? "COOKING" : "AGILITY";
+				plan = new TaskPlan(new Goal(Goal.Type.SKILL_XP, pretty(Skill.valueOf(skill)) + " training", 50_000, skill), null);
+			}
 			nextGoal = plan.getNext();
 			if (nextGoal == null) configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
 			else configManager.setRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL, nextGoal.serialize());
@@ -570,6 +639,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED);
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, GOAL_PROGRESS);
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
+		syncProfile();
 		refreshPanel();
 	}
 
@@ -665,6 +735,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 			goalCompleted = true;
 			configManager.setRSProfileConfiguration(BackpackConfig.GROUP, GOAL_COMPLETED, true);
 		}
+		syncProfile();
 	}
 
 	private BadgeProgress loadBadgeProgress()
