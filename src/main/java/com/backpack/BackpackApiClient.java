@@ -37,6 +37,28 @@ final class BackpackApiClient
 	{
 		post(base, "/v1/events", Map.of("type", type, "amount", amount, "sequence", sequence), token, ignored -> {}, error -> log.warn("Backpack sync event failed: {}", error));
 	}
+	void team(String base, String token, Consumer<RemoteTeam> success, Consumer<String> failure)
+	{
+		if (!validBase(base)) { failure.accept("Invalid server URL"); return; }
+		Request request = new Request.Builder().url(base.replaceAll("/$", "") + "/v1/team")
+			.header("Authorization", "Bearer " + token).get().build();
+		if (!config.serverEnabled()) { failure.accept("Backpack server is disabled"); return; }
+		http.newCall(request).enqueue(new Callback()
+		{
+			@Override public void onFailure(Call call, IOException e) { SwingUtilities.invokeLater(() -> failure.accept("Server unavailable")); }
+			@Override public void onResponse(Call call, Response response)
+			{
+				try (Response ignored = response)
+				{
+					String body = response.body() == null ? "" : response.body().string();
+					if (!response.isSuccessful()) { SwingUtilities.invokeLater(() -> failure.accept("Server returned " + response.code())); return; }
+					RemoteTeam team = gson.fromJson(body, RemoteTeam.class);
+					SwingUtilities.invokeLater(() -> success.accept(team));
+				}
+				catch (IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failure.accept("Invalid server response")); }
+			}
+		});
+	}
 	private void post(String base, String path, Object payload, String token, Consumer<Session> success, Consumer<String> failure)
 	{
 		if (!validBase(base)) { failure.accept("Invalid server URL"); return; }

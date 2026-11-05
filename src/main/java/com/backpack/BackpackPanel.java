@@ -228,13 +228,17 @@ final class BackpackPanel extends PluginPanel
 		String playerKey = safeName(username);
 		raceContainer.add(new RaceLane(playerKey, playerKey, combatLevel, state.getXpGained(), teamPointGoal, CarryPoints.total(state), true, playerBadges,
 			state, personalGoal, goalCompleted, expandedPlayers.contains(playerKey)));
-		if (hasTeam && team.getMemberCount() > 1)
+		if (hasTeam && !team.getMembers().isEmpty())
 		{
-			for (int i = 1; i < team.getMemberCount(); i++)
+			for (Team.Member member : team.getMembers())
 			{
+				if (safeName(member.getName()).equalsIgnoreCase(playerKey)) continue;
 				raceContainer.add(Box.createRigidArea(new Dimension(0, 5)));
-				String waiting = "Waiting for member " + (i + 1);
-				raceContainer.add(new RaceLane(waiting, waiting, 0, 0, teamPointGoal, 0, false, java.util.Collections.emptyList(), null, null, false, expandedPlayers.contains(waiting)));
+				java.util.List<Image> memberBadges = new java.util.ArrayList<>();
+				if (member.isLeader()) memberBadges.add(catalog.badgeIcon("leader", true));
+				String memberName = safeName(member.getName());
+				raceContainer.add(new RaceLane(memberName, memberName, 0, member.getXp(), teamPointGoal, member.getPoints(), true,
+					memberBadges, null, null, false, expandedPlayers.contains(memberName)));
 			}
 		}
 		raceContainer.revalidate();

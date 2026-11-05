@@ -99,6 +99,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private BadgeProgress badgeProgress;
 	private String serverToken;
 	private long serverSequence;
+	private long nextTeamRefreshAt;
+	private boolean teamRefreshInFlight;
 
 	@Override
 	protected void startUp()
@@ -232,6 +234,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		if (initializingTicks == 0 && team != null)
 		{
 			if (groupChallenge == null || groupChallenge.cooldownFinished(Instant.now()) || groupChallenge.activeExpired(Instant.now())) createGroupChallenge();
+			if (config.serverEnabled() && serverToken != null && System.currentTimeMillis() >= nextTeamRefreshAt) refreshServerTeam();
 			refreshPanel();
 		}
 	}
@@ -444,13 +447,46 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private void applyServerSession(BackpackApiClient.Session session)
 	{
 		if (session == null || session.team == null || session.token == null) { panel.showError("Invalid server session"); return; }
-		BackpackApiClient.RemoteMember me = session.team.members == null ? null : session.team.members.get(session.memberId);
-		team = new Team(session.team.name, session.team.code, session.team.members == null ? 1 : session.team.members.size(), me != null && "LEADER".equals(me.role));
+		team = fromRemoteTeam(session.team, session.memberId);
 		serverToken = session.token; serverSequence = 0;
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_TOKEN, serverToken);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID, session.memberId);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_SEQUENCE, 0L);
+		nextTeamRefreshAt = System.currentTimeMillis() + 10_000;
 		saveTeam(); refreshPanel(); clientThread.invokeLater(this::createGroupChallenge);
+	}
+
+	private void refreshServerTeam()
+	{
+		if (teamRefreshInFlight) return;
+		teamRefreshInFlight = true;
+		nextTeamRefreshAt = System.currentTimeMillis() + 10_000;
+		String memberId = configManager.getRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID);
+		String expectedCode = team.getCode();
+		api.team(config.serverUrl(), serverToken, remote ->
+		{
+			teamRefreshInFlight = false;
+			if (remote == null || team == null || !expectedCode.equals(remote.code)) return;
+			team = fromRemoteTeam(remote, memberId);
+			saveTeam(); refreshPanel();
+		}, error -> teamRefreshInFlight = false);
+	}
+
+	private static Team fromRemoteTeam(BackpackApiClient.RemoteTeam remote, String memberId)
+	{
+		java.util.List<Team.Member> members = new java.util.ArrayList<>();
+		BackpackApiClient.RemoteMember me = null;
+		if (remote.members != null)
+		{
+			for (java.util.Map.Entry<String, BackpackApiClient.RemoteMember> entry : remote.members.entrySet())
+			{
+				BackpackApiClient.RemoteMember member = entry.getValue();
+				if (member == null) continue;
+				members.add(new Team.Member(member.name, member.role, member.points, member.xp));
+				if (entry.getKey().equals(memberId)) me = member;
+			}
+		}
+		return new Team(remote.name, remote.code, members.size(), me != null && "LEADER".equals(me.role), members);
 	}
 
 	private void syncEvent(String type, long amount)
@@ -468,6 +504,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		groupChallenge = null;
 		serverToken = null;
 		serverSequence = 0;
+		teamRefreshInFlight = false;
+		nextTeamRefreshAt = 0;
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, TEAM_NAME);
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, TEAM_CODE);
 		configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, TEAM_LEADER);
