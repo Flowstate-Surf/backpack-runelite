@@ -288,7 +288,7 @@ final class BackpackPanel extends PluginPanel
 		}
 		else if (groupChallenge.isCooldown())
 		{
-			long seconds = groupChallenge.remainingSeconds(java.time.Instant.now());
+			long seconds = groupChallenge.cooldownRemainingSeconds(java.time.Instant.now());
 			JLabel cooldown = new JLabel("<html><center>🏆 " + escapeHtml(groupChallenge.getWinner()) + " finished first!<br>Next challenge in "
 				+ String.format("%02d:%02d", seconds / 60, seconds % 60) + "</center></html>", SwingConstants.CENTER);
 			cooldown.setFont(UI_FONT);
@@ -301,8 +301,10 @@ final class BackpackPanel extends PluginPanel
 			JLabel icon = new JLabel(image == null ? null : new ImageIcon(image.getScaledInstance(24, 24, Image.SCALE_SMOOTH)));
 			long target = challengeGoal.getTarget();
 			long progress = Math.min(target, groupChallenge.getProgress());
+			long seconds = groupChallenge.activeRemainingSeconds(java.time.Instant.now());
 			JLabel text = new JLabel("<html><div style='width:150px'><b>First to finish: " + escapeHtml(challengeGoal.getDetail()) + "</b><br><font color='#aaaaaa'>"
-				+ format(progress) + " / " + format(target) + " · Winner earns 30 pts</font></div></html>");
+				+ format(progress) + " / " + format(target) + " · Winner earns 30 pts</font><br><font color='#ffb84d'>Rotates in "
+				+ formatDuration(seconds) + "</font></div></html>");
 			text.setFont(UI_FONT);
 			groupGoalContainer.add(icon, BorderLayout.WEST);
 			if (challengeGoal.getType() == Goal.Type.SKILL_XP)
@@ -319,6 +321,14 @@ final class BackpackPanel extends PluginPanel
 			}
 		}
 		groupGoalContainer.revalidate(); groupGoalContainer.repaint();
+	}
+
+	private static String formatDuration(long totalSeconds)
+	{
+		long hours = totalSeconds / 3_600;
+		long minutes = totalSeconds % 3_600 / 60;
+		long seconds = totalSeconds % 60;
+		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
 	}
 
 	private static JProgressBar xpProgressBar(long progress, long target)

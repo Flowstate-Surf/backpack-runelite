@@ -231,7 +231,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		}
 		if (initializingTicks == 0 && team != null)
 		{
-			if (groupChallenge == null || groupChallenge.cooldownFinished(Instant.now())) createGroupChallenge();
+			if (groupChallenge == null || groupChallenge.cooldownFinished(Instant.now()) || groupChallenge.activeExpired(Instant.now())) createGroupChallenge();
 			refreshPanel();
 		}
 	}
@@ -572,7 +572,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		if (team == null || client.getGameState() != GameState.LOGGED_IN) return;
 		Goal goal = taskGenerator.generate().getCurrent();
-		groupChallenge = new GroupChallenge(goal, 0, null, 0);
+		groupChallenge = GroupChallenge.active(goal, Instant.now());
 		saveGroupChallenge(); refreshPanel();
 	}
 
