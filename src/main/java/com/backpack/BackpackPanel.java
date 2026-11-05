@@ -12,6 +12,7 @@ import java.awt.RenderingHints;
 import java.awt.Rectangle;
 import java.awt.Image;
 import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Insets;
 import java.awt.Toolkit;
 import java.awt.datatransfer.StringSelection;
@@ -256,46 +257,7 @@ final class BackpackPanel extends PluginPanel
 			raceContainer.revalidate();
 			raceContainer.repaint();
 		}
-		goalContainer.removeAll();
-		if (personalGoal == null)
-		{
-			JLabel empty = new JLabel("No goal assigned", SwingConstants.CENTER);
-			empty.setForeground(MUTED);
-			empty.setFont(UI_FONT);
-			goalContainer.add(empty);
-		}
-		else
-		{
-			Image goalImage = catalog.icon(personalGoal);
-			JLabel icon = new JLabel(goalImage == null ? null : new ImageIcon(goalImage.getScaledInstance(24, 24, Image.SCALE_SMOOTH)));
-			String status = goalCompleted ? "<font color='#7bd88f'>✓ Complete · bonus awarded</font>" : "<font color='#aaaaaa'>Target: " + format(personalGoal.getTarget()) + "</font>";
-			if (nextGoal != null) status += "<br><font color='#ffb84d'>Next: " + escapeHtml(nextGoal.getDetail()) + "</font>";
-			JLabel text = new JLabel("<html><div style='width:145px'><b>" + escapeHtml(personalGoal.getDetail()) + "</b><br>" + status + "</div></html>");
-			text.setFont(UI_FONT);
-			JButton clear = new JButton("×");
-			clear.setToolTipText("Clear goal");
-			clear.setForeground(MUTED);
-			clear.setBackground(INSET);
-			clear.setFocusPainted(false);
-			clear.setBorder(new RoundedBorder(BORDER_LIGHT, 4, new Insets(1, 5, 1, 5)));
-			clear.addActionListener(event -> actions.clearGoal());
-			goalContainer.add(icon, BorderLayout.WEST);
-			if (personalGoal.getType() == Goal.Type.SKILL_XP)
-			{
-				JPanel details = new JPanel(new BorderLayout(0, 4));
-				details.setOpaque(false);
-				details.add(text, BorderLayout.CENTER);
-				details.add(xpProgressBar(goalCompleted ? personalGoal.getTarget() : goalProgress, personalGoal.getTarget()), BorderLayout.SOUTH);
-				goalContainer.add(details, BorderLayout.CENTER);
-			}
-			else
-			{
-				goalContainer.add(text, BorderLayout.CENTER);
-			}
-			goalContainer.add(clear, BorderLayout.EAST);
-		}
-		goalContainer.revalidate();
-		goalContainer.repaint();
+		renderGoal(personalGoal, nextGoal, goalProgress, goalCompleted, true);
 		groupGoalContainer.removeAll();
 		if (!hasTeam || groupChallenge == null)
 		{
@@ -338,6 +300,50 @@ final class BackpackPanel extends PluginPanel
 			}
 		}
 		groupGoalContainer.revalidate(); groupGoalContainer.repaint();
+	}
+
+	private void renderGoal(Goal personalGoal, Goal nextGoal, long goalProgress, boolean goalCompleted, boolean editable)
+	{
+		goalContainer.removeAll();
+		if (personalGoal == null)
+		{
+			JLabel empty = new JLabel("No goal assigned", SwingConstants.CENTER);
+			empty.setForeground(MUTED);
+			empty.setFont(UI_FONT);
+			goalContainer.add(empty);
+		}
+		else
+		{
+			Image goalImage = catalog.icon(personalGoal);
+			JLabel icon = new JLabel(goalImage == null ? null : new ImageIcon(goalImage.getScaledInstance(24, 24, Image.SCALE_SMOOTH)));
+			String status = goalCompleted ? "<font color='#7bd88f'>✓ Complete · bonus awarded</font>" : "<font color='#aaaaaa'>Target: " + format(personalGoal.getTarget()) + "</font>";
+			if (nextGoal != null) status += "<br><font color='#ffb84d'>Next: " + escapeHtml(nextGoal.getDetail()) + "</font>";
+			JLabel text = new JLabel("<html><div style='width:145px'><b>" + escapeHtml(personalGoal.getDetail()) + "</b><br>" + status + "</div></html>");
+			text.setFont(UI_FONT);
+			JButton clear = new JButton("×");
+			clear.setToolTipText("Clear goal");
+			clear.setForeground(MUTED);
+			clear.setBackground(INSET);
+			clear.setFocusPainted(false);
+			clear.setBorder(new RoundedBorder(BORDER_LIGHT, 4, new Insets(1, 5, 1, 5)));
+			clear.addActionListener(event -> actions.clearGoal());
+			goalContainer.add(icon, BorderLayout.WEST);
+			if (personalGoal.getType() == Goal.Type.SKILL_XP)
+			{
+				JPanel details = new JPanel(new BorderLayout(0, 4));
+				details.setOpaque(false);
+				details.add(text, BorderLayout.CENTER);
+				details.add(xpProgressBar(goalCompleted ? personalGoal.getTarget() : goalProgress, personalGoal.getTarget()), BorderLayout.SOUTH);
+				goalContainer.add(details, BorderLayout.CENTER);
+			}
+			else
+			{
+				goalContainer.add(text, BorderLayout.CENTER);
+			}
+			if (editable) goalContainer.add(clear, BorderLayout.EAST);
+		}
+		goalContainer.revalidate();
+		goalContainer.repaint();
 	}
 
 	private static String formatDuration(long totalSeconds)
@@ -683,6 +689,7 @@ final class BackpackPanel extends PluginPanel
 			this.expanded = expanded;
 			setFont(UI_FONT);
 			setOpaque(false);
+			setCursor(new Cursor(Cursor.HAND_CURSOR));
 			updateSize();
 			addMouseListener(new MouseAdapter()
 			{
@@ -692,6 +699,8 @@ final class BackpackPanel extends PluginPanel
 					RaceLane.this.expanded = !RaceLane.this.expanded;
 					if (RaceLane.this.expanded) expandedPlayers.add(RaceLane.this.key);
 					else expandedPlayers.remove(RaceLane.this.key);
+					if (RaceLane.this.expanded && RaceLane.this.state == null)
+						renderGoal(RaceLane.this.assignedGoal, null, RaceLane.this.goalProgress, RaceLane.this.goalCompleted, false);
 					updateSize();
 					revalidate();
 					if (getParent() != null) getParent().revalidate();

@@ -33,19 +33,20 @@ final class BackpackApiClient
 	{
 		post(base, "/v1/teams/join", Map.of("code", code, "player", player, "combatLevel", combatLevel), null, success, failure);
 	}
-	void profile(String base, String token, int combatLevel, Goal goal, long progress, boolean completed)
+	void profile(String base, String token, int combatLevel, Goal goal, long progress, boolean completed,
+		Consumer<RemoteTeam> success)
 	{
 		java.util.Map<String, Object> payload = new java.util.HashMap<>();
 		payload.put("combatLevel", combatLevel); payload.put("goal", goal == null ? null : goal.serialize());
 		payload.put("goalProgress", progress); payload.put("goalCompleted", completed);
-		post(base, "/v1/profile", payload, token, ignored -> {}, error -> log.warn("Backpack profile sync failed: {}", error));
+		postTeam(base, "/v1/profile", payload, token, success, error -> log.warn("Backpack profile sync failed: {}", error));
 	}
-	void assignGoal(String base, String token, String memberId, Goal goal, Runnable success, Consumer<String> failure)
+	void assignGoal(String base, String token, String memberId, Goal goal, Consumer<RemoteTeam> success, Consumer<String> failure)
 	{
 		java.util.Map<String, Object> payload = new java.util.HashMap<>();
 		payload.put("action", goal == null ? "CLEAR_GOAL" : "SET_GOAL"); payload.put("memberId", memberId);
 		payload.put("goal", goal == null ? null : goal.serialize());
-		post(base, "/v1/admin", payload, token, ignored -> success.run(), failure);
+		postTeam(base, "/v1/admin", payload, token, success, failure);
 	}
 	void leave(String base, String token, Runnable success, Consumer<String> failure)
 	{
@@ -93,6 +94,28 @@ final class BackpackApiClient
 					String body = response.body() == null ? "" : response.body().string();
 					if (!response.isSuccessful()) { SwingUtilities.invokeLater(() -> failure.accept("Server returned " + response.code())); return; }
 					Session session = gson.fromJson(body, Session.class); SwingUtilities.invokeLater(() -> success.accept(session));
+				}
+				catch (IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failure.accept("Invalid server response")); }
+			}
+		});
+	}
+	private void postTeam(String base, String path, Object payload, String token, Consumer<RemoteTeam> success, Consumer<String> failure)
+	{
+		if (!validBase(base)) { failure.accept("Invalid server URL"); return; }
+		Request.Builder builder = new Request.Builder().url(base.replaceAll("/$", "") + path).post(RequestBody.create(JSON_TYPE, gson.toJson(payload)));
+		if (token != null) builder.header("Authorization", "Bearer " + token);
+		if (!config.serverEnabled()) { failure.accept("Backpack server is disabled"); return; }
+		http.newCall(builder.build()).enqueue(new Callback()
+		{
+			@Override public void onFailure(Call call, IOException e) { SwingUtilities.invokeLater(() -> failure.accept("Server unavailable")); }
+			@Override public void onResponse(Call call, Response response)
+			{
+				try (Response ignored = response)
+				{
+					String body = response.body() == null ? "" : response.body().string();
+					if (!response.isSuccessful()) { SwingUtilities.invokeLater(() -> failure.accept("Server returned " + response.code())); return; }
+					RemoteTeam team = gson.fromJson(body, RemoteTeam.class);
+					SwingUtilities.invokeLater(() -> success.accept(team));
 				}
 				catch (IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failure.accept("Invalid server response")); }
 			}

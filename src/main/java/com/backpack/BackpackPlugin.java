@@ -406,7 +406,20 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private void syncProfile()
 	{
 		if (!config.serverEnabled() || serverToken == null) return;
-		api.profile(config.serverUrl(), serverToken, combatLevel(), personalGoal, goalProgress, goalCompleted);
+		String token = serverToken;
+		String memberId = configManager.getRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID);
+		api.profile(config.serverUrl(), token, combatLevel(), personalGoal, goalProgress, goalCompleted,
+			remote -> applyRemoteTeam(remote, memberId, token));
+	}
+
+	private void applyRemoteTeam(BackpackApiClient.RemoteTeam remote, String memberId, String requestToken)
+	{
+		if (remote == null || remote.members == null || remote.members.isEmpty() || team == null
+			|| serverToken == null || !serverToken.equals(requestToken) || !team.getCode().equals(remote.code)) return;
+		team = fromRemoteTeam(remote, memberId);
+		reconcileRemoteGoal(remote, memberId);
+		saveTeam();
+		refreshPanel();
 	}
 
 	private void reconcileRemoteGoal(BackpackApiClient.RemoteTeam remote, String memberId)
@@ -530,10 +543,9 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		api.team(config.serverUrl(), serverToken, remote ->
 		{
 			teamRefreshInFlight = false;
-			if (remote == null || remote.members == null || remote.members.isEmpty() || team == null || !expectedCode.equals(remote.code)) return;
-			team = fromRemoteTeam(remote, memberId);
-			reconcileRemoteGoal(remote, memberId);
-			saveTeam(); syncProfile(); refreshPanel();
+			if (team == null || !expectedCode.equals(team.getCode())) return;
+			applyRemoteTeam(remote, memberId, serverToken);
+			syncProfile();
 		}, error -> teamRefreshInFlight = false);
 	}
 
@@ -610,7 +622,10 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		if (team != null && config.serverEnabled() && serverToken != null)
 		{
-			api.assignGoal(config.serverUrl(), serverToken, memberId, goal, this::refreshServerTeam, error -> panel.showError(error));
+			String token = serverToken;
+			String currentMemberId = configManager.getRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID);
+			api.assignGoal(config.serverUrl(), token, memberId, goal,
+				remote -> applyRemoteTeam(remote, currentMemberId, token), error -> panel.showError(error));
 			return;
 		}
 		nextGoal = null;
