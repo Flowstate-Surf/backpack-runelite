@@ -83,6 +83,7 @@ final class BackpackPanel extends PluginPanel
 	private final JButton badgeFilterButton = new JButton("EARNED ONLY");
 	private boolean showLocked = true;
 	private Team currentTeam;
+	private String renderedRaceSignature;
 
 	BackpackPanel(Actions actions, GoalCatalog catalog)
 	{
@@ -220,7 +221,11 @@ final class BackpackPanel extends PluginPanel
 		leaveButton.setEnabled(hasTeam);
 		setGoalButton.setVisible(hasTeam && team.isLeader());
 		createJoinRow.setVisible(!hasTeam);
-		raceContainer.removeAll();
+		String raceSignature = raceSignature(team, username, state, personalGoal, goalProgress, goalCompleted, combatLevel, goal);
+		if (!raceSignature.equals(renderedRaceSignature))
+		{
+			renderedRaceSignature = raceSignature;
+			raceContainer.removeAll();
 		long teamPointGoal = Math.max(1, CarryPoints.forXp(goal));
 		java.util.List<Image> playerBadges = new java.util.ArrayList<>();
 		if (hasTeam && team.isLeader()) playerBadges.add(catalog.badgeIcon("leader", true));
@@ -248,8 +253,9 @@ final class BackpackPanel extends PluginPanel
 					memberBadges, null, member.getGoal(), member.getGoalProgress(), member.isGoalCompleted(), expandedPlayers.contains(memberName)));
 			}
 		}
-		raceContainer.revalidate();
-		raceContainer.repaint();
+			raceContainer.revalidate();
+			raceContainer.repaint();
+		}
 		goalContainer.removeAll();
 		if (personalGoal == null)
 		{
@@ -340,6 +346,19 @@ final class BackpackPanel extends PluginPanel
 		long minutes = totalSeconds % 3_600 / 60;
 		long seconds = totalSeconds % 60;
 		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+	}
+
+	private static String raceSignature(Team team, String username, BackpackState state, Goal personalGoal, long goalProgress,
+		boolean goalCompleted, int combatLevel, int weeklyGoal)
+	{
+		StringBuilder value = new StringBuilder().append(username).append('|').append(combatLevel).append('|').append(weeklyGoal)
+			.append('|').append(state.getXpGained()).append('|').append(CarryPoints.total(state)).append('|').append(goalProgress)
+			.append('|').append(goalCompleted).append('|').append(personalGoal == null ? "" : personalGoal.serialize());
+		if (team != null) for (Team.Member member : team.getMembers()) value.append('|').append(member.getId()).append(':')
+			.append(member.getCombatLevel()).append(':').append(member.getPoints()).append(':').append(member.getXp()).append(':')
+			.append(member.getGoalProgress()).append(':').append(member.isGoalCompleted()).append(':')
+			.append(member.getGoal() == null ? "" : member.getGoal().serialize());
+		return value.toString();
 	}
 
 	private static JProgressBar xpProgressBar(long progress, long target)

@@ -41,6 +41,11 @@ final class TaskGenerator
 
 	TaskPlan generate()
 	{
+		return generate(new Goal[0]);
+	}
+
+	TaskPlan generate(Goal... excluded)
+	{
 		int combat = client.getLocalPlayer() == null ? 3 : client.getLocalPlayer().getCombatLevel();
 		List<TaskPlan> exact = new ArrayList<>();
 		List<TaskPlan> near = new ArrayList<>();
@@ -72,10 +77,31 @@ final class TaskGenerator
 		addDropTask(exact, combat, "Granite maul", "Gargoyle", 70, Skill.SLAYER, 75);
 		addDropTask(exact, combat, "Dragon boots", "Spiritual mage", 85, Skill.SLAYER, 83);
 		addDropTask(exact, combat, "Abyssal whip", "Abyssal demon", 95, Skill.SLAYER, 85);
-		List<TaskPlan> choices = !near.isEmpty() ? near : exact;
+		List<TaskPlan> choices = allowed(near, excluded);
+		if (choices.isEmpty()) choices = allowed(exact, excluded);
 		if (!choices.isEmpty()) return choices.get(ThreadLocalRandom.current().nextInt(choices.size()));
-		Skill fallback = combat < 40 ? Skill.ATTACK : combat < 70 ? Skill.SLAYER : Skill.PRAYER;
+		Skill[] fallbackSkills = {Skill.ATTACK, Skill.STRENGTH, Skill.DEFENCE, Skill.RANGED, Skill.MAGIC, Skill.SLAYER, Skill.PRAYER, Skill.AGILITY, Skill.COOKING};
+		List<Skill> fallbacks = new ArrayList<>();
+		for (Skill skill : fallbackSkills)
+		{
+			Goal candidate = new Goal(Goal.Type.SKILL_XP, pretty(skill) + " training", 50_000, skill.name());
+			if (!isExcluded(candidate, excluded)) fallbacks.add(skill);
+		}
+		Skill fallback = fallbacks.isEmpty() ? Skill.ATTACK : fallbacks.get(ThreadLocalRandom.current().nextInt(fallbacks.size()));
 		return new TaskPlan(new Goal(Goal.Type.SKILL_XP, pretty(fallback) + " training", 50_000, fallback.name()), null);
+	}
+
+	private static List<TaskPlan> allowed(List<TaskPlan> plans, Goal... excluded)
+	{
+		List<TaskPlan> result = new ArrayList<>();
+		for (TaskPlan plan : plans) if (!isExcluded(plan.getCurrent(), excluded)) result.add(plan);
+		return result;
+	}
+
+	private static boolean isExcluded(Goal candidate, Goal... excluded)
+	{
+		for (Goal goal : excluded) if (candidate.sameTask(goal)) return true;
+		return false;
 	}
 
 	private void addDropTask(List<TaskPlan> tasks, int combat, String item, String monster, int requiredCombat, Skill skill, int requiredLevel)

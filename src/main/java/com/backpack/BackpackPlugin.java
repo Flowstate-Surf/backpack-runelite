@@ -101,6 +101,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	private long serverSequence;
 	private long nextTeamRefreshAt;
 	private boolean teamRefreshInFlight;
+	private long nextPanelRefreshAt;
+	private boolean panelRefreshPending;
 
 	@Override
 	protected void startUp()
@@ -235,8 +237,9 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		if (initializingTicks == 0 && team != null)
 		{
 			if (groupChallenge == null || groupChallenge.cooldownFinished(Instant.now()) || groupChallenge.activeExpired(Instant.now())) createGroupChallenge();
-			if (config.serverEnabled() && serverToken != null && System.currentTimeMillis() >= nextTeamRefreshAt) refreshServerTeam();
-			refreshPanel();
+			long now = System.currentTimeMillis();
+			if (config.serverEnabled() && serverToken != null && now >= nextTeamRefreshAt) refreshServerTeam();
+			if (now >= nextPanelRefreshAt) { nextPanelRefreshAt = now + 1_000; refreshPanel(); }
 		}
 	}
 
@@ -456,11 +459,19 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 
 	private void refreshPanel()
 	{
-		if (panel == null || state == null) return;
+		if (panel == null || state == null || panelRefreshPending) return;
+		panelRefreshPending = true;
+		BackpackPanel targetPanel = panel;
 		String username = client.getLocalPlayer() == null ? "You" : client.getLocalPlayer().getName();
 		int combatLevel = client.getLocalPlayer() == null ? 0 : client.getLocalPlayer().getCombatLevel();
-		SwingUtilities.invokeLater(() -> panel.update(team, username, state, config.weeklyXpGoal(), personalGoal, nextGoal, goalProgress,
-			goalCompleted, groupChallenge, groupWins, combatLevel, badgeProgress));
+		SwingUtilities.invokeLater(() -> {
+			try
+			{
+				if (panel == targetPanel) targetPanel.update(team, username, state, config.weeklyXpGoal(), personalGoal, nextGoal, goalProgress,
+					goalCompleted, groupChallenge, groupWins, combatLevel, badgeProgress);
+			}
+			finally { panelRefreshPending = false; }
+		});
 	}
 
 	@Override
@@ -504,7 +515,7 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_TOKEN, serverToken);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID, session.memberId);
 		configManager.setRSProfileConfiguration(BackpackConfig.GROUP, SERVER_SEQUENCE, 0L);
-		nextTeamRefreshAt = System.currentTimeMillis() + 10_000;
+		nextTeamRefreshAt = System.currentTimeMillis() + 5_000;
 		reconcileRemoteGoal(session.team, session.memberId);
 		saveTeam(); syncProfile(); refreshPanel(); clientThread.invokeLater(this::createGroupChallenge);
 	}
@@ -513,16 +524,16 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	{
 		if (teamRefreshInFlight) return;
 		teamRefreshInFlight = true;
-		nextTeamRefreshAt = System.currentTimeMillis() + 10_000;
+		nextTeamRefreshAt = System.currentTimeMillis() + 5_000;
 		String memberId = configManager.getRSProfileConfiguration(BackpackConfig.GROUP, SERVER_MEMBER_ID);
 		String expectedCode = team.getCode();
 		api.team(config.serverUrl(), serverToken, remote ->
 		{
 			teamRefreshInFlight = false;
-			if (remote == null || team == null || !expectedCode.equals(remote.code)) return;
+			if (remote == null || remote.members == null || remote.members.isEmpty() || team == null || !expectedCode.equals(remote.code)) return;
 			team = fromRemoteTeam(remote, memberId);
 			reconcileRemoteGoal(remote, memberId);
-			saveTeam(); refreshPanel();
+			saveTeam(); syncProfile(); refreshPanel();
 		}, error -> teamRefreshInFlight = false);
 	}
 
@@ -623,14 +634,8 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	public void generateTask()
 	{
 		clientThread.invokeLater(() -> {
-			TaskPlan plan = taskGenerator.generate();
 			Goal excluded = groupChallenge == null || groupChallenge.isCooldown() ? null : groupChallenge.getGoal();
-			for (int attempt = 0; excluded != null && plan.getCurrent().sameTask(excluded) && attempt < 12; attempt++) plan = taskGenerator.generate();
-			if (excluded != null && plan.getCurrent().sameTask(excluded))
-			{
-				String skill = "AGILITY".equals(excluded.getReference()) ? "COOKING" : "AGILITY";
-				plan = new TaskPlan(new Goal(Goal.Type.SKILL_XP, pretty(Skill.valueOf(skill)) + " training", 50_000, skill), null);
-			}
+			TaskPlan plan = taskGenerator.generate(excluded, personalGoal);
 			nextGoal = plan.getNext();
 			if (nextGoal == null) configManager.unsetRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL);
 			else configManager.setRSProfileConfiguration(BackpackConfig.GROUP, NEXT_GOAL, nextGoal.serialize());
