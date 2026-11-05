@@ -555,6 +555,16 @@ public class BackpackPlugin extends Plugin implements BackpackPanel.Actions
 	@Override
 	public void leaveTeam()
 	{
+		if (config.serverEnabled() && serverToken != null)
+		{
+			api.leave(config.serverUrl(), serverToken, this::clearLocalTeam, error -> panel.showError(error));
+			return;
+		}
+		clearLocalTeam();
+	}
+
+	private void clearLocalTeam()
+	{
 		team = null;
 		groupChallenge = null;
 		serverToken = null;

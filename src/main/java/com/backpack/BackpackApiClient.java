@@ -47,6 +47,10 @@ final class BackpackApiClient
 		payload.put("goal", goal == null ? null : goal.serialize());
 		post(base, "/v1/admin", payload, token, ignored -> success.run(), failure);
 	}
+	void leave(String base, String token, Runnable success, Consumer<String> failure)
+	{
+		post(base, "/v1/teams/leave", java.util.Collections.emptyMap(), token, ignored -> success.run(), failure);
+	}
 	void event(String base, String token, String type, long amount, long sequence)
 	{
 		post(base, "/v1/events", Map.of("type", type, "amount", amount, "sequence", sequence), token, ignored -> {}, error -> log.warn("Backpack sync event failed: {}", error));
